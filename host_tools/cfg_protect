@@ -1,0 +1,59 @@
+#!/usr/bin/python3 -u
+
+# 2022 eCTF
+# Protect Configuration Tool
+# Kyle Scaplen
+#
+# (c) 2022 The MITRE Corporation
+#
+# This source file is part of an example system for MITRE's 2022 Embedded System
+# CTF (eCTF). This code is being provided only for educational purposes for the
+# 2022 MITRE eCTF competition, and may not meet MITRE standards for quality.
+# Use this code at your own risk!
+
+import argparse
+import logging
+from pathlib import Path
+
+from util import print_banner, CONFIGURATION_ROOT, LOG_FORMAT
+
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+log = logging.getLogger(Path(__file__).name)
+
+
+def protect_configuration(raw_cfg: Path, protected_cfg: Path):
+    print_banner("SAFFIRe Configuration Protect Tool")
+
+    # Read in the raw configuration binary
+    log.info("Reading configuration data...")
+    file_data = raw_cfg.read_bytes()
+
+    log.info("Packaging the configuration...")
+
+    # Write to the output file
+    protected_cfg.write_bytes(file_data)
+
+    log.info("Configuration protected\n")
+
+
+def main():
+    # get arguments
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--input-file", help="The name of the configuration to protect.", required=True
+    )
+    parser.add_argument(
+        "--output-file", help="The name of the protected configuration.", required=True
+    )
+
+    args = parser.parse_args()
+
+    # process command
+    raw_cfg = CONFIGURATION_ROOT / args.input_file
+    protected_cfg = CONFIGURATION_ROOT / args.output_file
+    protect_configuration(raw_cfg, protected_cfg)
+
+
+if __name__ == "__main__":
+    main()

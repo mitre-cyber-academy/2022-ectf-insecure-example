@@ -1,0 +1,110 @@
+#!/usr/bin/python3 -u
+
+# 2022 eCTF
+# Memory Readback Tool
+# Kyle Scaplen
+#
+# (c) 2022 The MITRE Corporation
+#
+# This source file is part of an example system for MITRE's 2022 Embedded System
+# CTF (eCTF). This code is being provided only for educational purposes for the
+# 2022 MITRE eCTF competition, and may not meet MITRE standards for quality.
+# Use this code at your own risk!
+
+import argparse
+import logging
+import socket
+from pathlib import Path
+
+from util import print_banner, LOG_FORMAT
+
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+log = logging.getLogger(Path(__file__).name)
+
+
+def readback(socket_number, region, num_bytes):
+    # Print Banner
+    print_banner("SAFFIRe Memory Readback Tool")
+
+    # Connect to the bootoader
+    log.info("Connecting socket...")
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.connect(("localhost", socket_number))
+
+        # Send readback command
+        log.info("Sending readback command...")
+        sock.send(b"R")
+
+        # Receive bootloader acknowledgement
+        log.info("Waiting for bootloader to enter readback mode...")
+        while sock.recv(1) != b"R":
+            pass
+
+        # Send the region identifier
+        log.info("Sending the region identifier to read back...")
+        if region == "firmware":
+            # send firmware identifier
+            sock.send(b"F")
+            # get acknowledgement
+            log.info("Waiting for bootloader to confirm the region...")
+            while sock.recv(1) != b"F":
+                pass
+        elif region == "configuration":
+            # send configuration identifier
+            sock.send(b"C")
+            # get acknowledgement
+            log.info("Waiting for bootloader to confirm the region...")
+            while sock.recv(1) != b"C":
+                pass
+        else:
+            # send character other than an identifier to exit readback
+            sock.send(b"Q")
+            return
+
+        # Send the number of bytes to read
+        size = int.to_bytes(num_bytes, 4, "big")
+        sock.send(size)
+
+        # Receive firmware data
+        log.info("Receiving firmware...")
+        bytes_remaining = num_bytes
+        fw = b""
+        while bytes_remaining > 0:
+            num_bytes = 4096 if bytes_remaining > 4096 else bytes_remaining
+            data = sock.recv(num_bytes)
+            num_received = len(data)
+            fw += data
+            bytes_remaining -= num_received
+
+        log.info(f"Memory Readback Data: {fw.hex()}\n")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--socket",
+        help="Port number of the socket to connect the host to the bootloader.",
+        type=int,
+        required=True,
+    )
+    parser.add_argument(
+        "--region",
+        help="The region to read.",
+        choices=["firmware", "configuration"],
+        required=True,
+    )
+    parser.add_argument(
+        "--num-bytes",
+        help="The number of bytes to read from the region.",
+        type=int,
+        required=True,
+    )
+
+    args = parser.parse_args()
+
+    readback(args.socket, args.region, args.num_bytes)
+
+
+if __name__ == "__main__":
+    main()

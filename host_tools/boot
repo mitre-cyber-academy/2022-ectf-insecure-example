@@ -1,0 +1,88 @@
+#!/usr/bin/python3 -u
+
+# 2022 eCTF
+# Boot Tool
+# Kyle Scaplen
+#
+# (c) 2022 The MITRE Corporation
+#
+# This source file is part of an example system for MITRE's 2022 Embedded System
+# CTF (eCTF). This code is being provided only for educational purposes for the
+# 2022 MITRE eCTF competition, and may not meet MITRE standards for quality.
+# Use this code at your own risk!
+
+import argparse
+import logging
+from pathlib import Path
+import socket
+
+from util import print_banner, RELEASE_MESSAGES_ROOT, LOG_FORMAT
+
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+log = logging.getLogger(Path(__file__).name)
+
+
+def boot(socket_number: int, release_message_file: Path):
+    print_banner("SAFFIRe Firmware Boot Tool")
+
+    # Connect to the bootloader
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.connect(("localhost", socket_number))
+
+        # Send boot command
+        log.info("Sending boot command...")
+        sock.send(b"B")
+
+        # Receive bootloader acknowledgement
+        log.info("Waiting for bootloader to enter boot mode...")
+        while sock.recv(1) != b"B":
+            pass
+
+        # Wait for bootloader to move firmware to ram
+        log.info("Waiting for bootloader to copy firmware to RAM...")
+        msg = sock.recv(1)
+        if msg != b"M":
+            exit(f"Boot failed with code {repr(msg)}")
+
+        # Receive release message
+        log.info("Receiving release message...")
+        release_msg = sock.recv(1)
+        while release_msg[-1] != 0:
+            release_msg += sock.recv(1)
+
+        log.info(f"Release Message: {release_msg}")
+
+        # Write release message to file
+        log.info("Writing release message to output file...")
+        release_message_file.write_text(release_msg.decode("latin-1"))
+
+        log.info("Firmware booted\n")
+
+        # Exit successfully
+        exit(0)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--socket",
+        help="Port number of the socket to connect the host to the bootloader.",
+        type=int,
+        required=True,
+    )
+    parser.add_argument(
+        "--release-message-file",
+        help="Name of a file to store the release message in.",
+        required=True,
+    )
+
+    args = parser.parse_args()
+
+    release_message_file = RELEASE_MESSAGES_ROOT / args.release_message_file
+
+    boot(args.socket, release_message_file)
+
+
+if __name__ == "__main__":
+    main()

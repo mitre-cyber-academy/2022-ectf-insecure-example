@@ -1,0 +1,93 @@
+#!/usr/bin/python3 -u
+
+# 2022 eCTF
+# Update Tool
+# Kyle Scaplen
+#
+# (c) 2022 The MITRE Corporation
+#
+# This source file is part of an example system for MITRE's 2022 Embedded System
+# CTF (eCTF). This code is being provided only for educational purposes for the
+# 2022 MITRE eCTF competition, and may not meet MITRE standards for quality.
+# Use this code at your own risk!
+
+import argparse
+import json
+import logging
+from pathlib import Path
+import socket
+import struct
+
+from util import print_banner, send_packets, RESP_OK, FIRMWARE_ROOT, LOG_FORMAT
+
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+log = logging.getLogger(Path(__file__).name)
+
+
+def update_firmware(socket_number: int, firmware_file: Path):
+    print_banner("SAFFIRe Firmware Update Tool")
+
+    log.info("Reading firmware file...")
+    with firmware_file.open("rb") as fw:
+        data = json.load(fw)
+        version_num: int = data["version_num"]
+        release_msg: str = data["release_msg"]
+        firmware = bytes.fromhex(data["firmware"])
+        firmware_size = len(firmware)
+
+    # Connect to the bootloader
+    log.info("Connecting socket...")
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.connect(("localhost", socket_number))
+
+        # Send update command
+        log.info("Sending update command...")
+        sock.send(b"U")
+
+        # Receive bootloader acknowledgement
+        log.info("Waiting for bootloader to enter update mode...")
+        while sock.recv(1) != b"U":
+            pass
+
+        # Send the version, size, and release message
+        log.info("Sending version, size, and release message...")
+        payload = (
+            struct.pack(">HI", version_num, firmware_size)
+            + release_msg.encode()
+            + b"\x00"
+        )
+        sock.send(payload)
+        response = sock.recv(1)
+        if response != RESP_OK:
+            exit(f"ERROR: Bootloader responded with {repr(response)}")
+
+        # Send packets
+        log.info("Sending firmware packets...")
+        send_packets(sock, firmware)
+
+        log.info("Firmware updated\n")
+
+
+def main():
+    # get arguments
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--socket",
+        help="Port number of the socket to connect the host to the bootloader.",
+        type=int,
+        required=True,
+    )
+    parser.add_argument(
+        "--firmware-file", help="Name of the firmware image to load.", required=True
+    )
+
+    args = parser.parse_args()
+
+    firmware_file = FIRMWARE_ROOT / args.firmware_file
+
+    update_firmware(args.socket, firmware_file)
+
+
+if __name__ == "__main__":
+    main()

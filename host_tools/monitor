@@ -1,0 +1,137 @@
+#!/usr/bin/python3 -u
+
+# 2022 eCTF
+# Example Firmware Bus Monitor
+# Kyle Scaplen
+#
+# (c) 2022 The MITRE Corporation
+#
+# This source file is part of an example system for MITRE's 2022 Embedded System
+# CTF (eCTF). This code is being provided only for educational purposes for the
+# 2022 MITRE eCTF competition, and may not meet MITRE standards for quality.
+# Use this code at your own risk!
+
+import argparse
+import logging
+import socket
+from pathlib import Path
+
+from util import print_banner, RELEASE_MESSAGES_ROOT, LOG_FORMAT
+
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+log = logging.getLogger(Path(__file__).name)
+
+
+def monitor(socket_number: int, mfile: str):
+    # Monitor Header
+    print_banner("CTF Systems Avionics Bus Controller v5.7 - eCTF Organizers 2022")
+
+    # Construct the socket and release message file paths
+    mfile = RELEASE_MESSAGES_ROOT / mfile
+
+    # Print release message
+    log.info("*** Firmware Release Message ***\n")
+
+    log.info(mfile.read_text(encoding="latin-1"))
+
+    # Connect to the firmware
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as hsock:
+        hsock.connect(("localhost", socket_number))
+
+        try:
+            # Send init command
+            log.info("Initializing aircraft sensors")
+            hsock.send(b"I")
+
+            # Get status
+            data = hsock.recv(4096)
+            while data[-1] != 1:
+                data = data + hsock.recv(4096)
+            data = data[:-1]
+
+            # Print response
+            for s in data.decode("latin-1").split("\n"):
+                log.info(f"Response: {s}")
+
+            # Send start command
+            log.info("Starting aircraft operation")
+            hsock.send(b"S")
+
+            # Get data
+            data = hsock.recv(4096)
+            while data[-1] != 1:
+                data = data + hsock.recv(4096)
+            data = data[:-1]
+
+            # Print response
+            for s in data.decode("latin-1").split("\n"):
+                log.info(f"Response: {s}")
+
+            # "Confirm" correct altitude
+            log.info("Correct altitude -- flight will continue")
+            hsock.send(b"Y")
+
+            # Get receive confirmation
+            data = hsock.recv(4096)
+            while data[-1] != 1:
+                data = data + hsock.recv(4096)
+            data = data[:-1]
+
+            # Print response
+            for s in data.decode("latin-1").split("\n"):
+                log.info(f"Response: {s}")
+
+            # Request configuration
+            log.info("Collecting flight configuration")
+            hsock.send(b"C")
+
+            # Get the configuration
+            data = hsock.recv(4096)
+            while data[-1] != 1:
+                data = data + hsock.recv(4096)
+            data = data[:-1]
+
+            for s in data.decode("latin-1").split("\n"):
+                log.info(f"Flight Configuration: {s}")
+
+            # End
+            log.info("Ending")
+            hsock.send(b"E")
+
+            # Get the final message
+            data = hsock.recv(4096)
+            while data[-1] != 1:
+                data = data + hsock.recv(4096)
+            data = data[:-1]
+
+            for s in data.decode("latin-1").split("\n"):
+                log.info(f"Final Response: {s}")
+
+            # End
+            log.info("Exiting.")
+        except KeyboardInterrupt:
+            log.warning("Monitor Cancelled. Exiting")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--socket",
+        help="Name of the socket to connect the host to the bootloader.",
+        type=int,
+        required=True,
+    )
+    parser.add_argument(
+        "--release-message-file",
+        help="Path to file with the release message.",
+        required=True,
+    )
+
+    args = parser.parse_args()
+
+    monitor(args.socket, args.release_message_file)
+
+
+if __name__ == "__main__":
+    main()

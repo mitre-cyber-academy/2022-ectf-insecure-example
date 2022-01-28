@@ -1,0 +1,84 @@
+#!/usr/bin/python3 -u
+
+# 2022 eCTF
+# Configure Tool
+# Kyle Scaplen
+#
+# (c) 2022 The MITRE Corporation
+#
+# This source file is part of an example system for MITRE's 2022 Embedded System
+# CTF (eCTF). This code is being provided only for educational purposes for the
+# 2022 MITRE eCTF competition, and may not meet MITRE standards for quality.
+# Use this code at your own risk!
+
+import argparse
+import logging
+from pathlib import Path
+import socket
+import struct
+
+from util import print_banner, send_packets, RESP_OK, CONFIGURATION_ROOT, LOG_FORMAT
+
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+log = logging.getLogger(Path(__file__).name)
+
+
+def load_configuration(socket_number: int, config_file: Path):
+    print_banner("SAFFIRe Configuration Tool")
+
+    log.info("Reading configuration file...")
+    configuration = config_file.read_bytes()
+    size = len(configuration)
+
+    # Connect to the bootloader
+    log.info("Connecting socket...")
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.connect(("localhost", socket_number))
+
+        # Send configure command
+        log.info("Sending configure command...")
+        sock.sendall(b"C")
+
+        # Receive bootloader acknowledgement
+        while sock.recv(1) != b"C":
+            pass
+
+        # Send the size
+        log.info("Sending the size...")
+        payload = struct.pack(">I", size)
+        sock.send(payload)
+        response = sock.recv(1)
+        if response != RESP_OK:
+            exit(f"ERROR: Bootloader responded with {repr(response)}")
+
+        # Send packets
+        send_packets(sock, configuration)
+
+        log.info("Firmware configured\n")
+
+
+def main():
+    # get arguments
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--socket",
+        help="Port number of the socket to connect the host to the bootloader.",
+        type=int,
+        required=True,
+    )
+    parser.add_argument(
+        "--config-file",
+        help="Name of the protected configuration to load.",
+        required=True,
+    )
+
+    args = parser.parse_args()
+
+    config_file = CONFIGURATION_ROOT / args.config_file
+
+    load_configuration(args.socket, config_file)
+
+
+if __name__ == "__main__":
+    main()
