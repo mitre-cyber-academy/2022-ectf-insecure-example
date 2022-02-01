@@ -203,7 +203,7 @@ void handle_update(void)
         current_version = (uint32_t)OLDEST_VERSION;
     }
 
-    if (version < current_version) {
+    if ((version != 0) && (version < current_version)) {
         // Version is not acceptable
         uart_writeb(HOST_UART, FRAME_BAD);
         return;
