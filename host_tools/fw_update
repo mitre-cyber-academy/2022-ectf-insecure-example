@@ -38,7 +38,7 @@ def update_firmware(socket_number: int, firmware_file: Path):
     # Connect to the bootloader
     log.info("Connecting socket...")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.connect(("localhost", socket_number))
+        sock.connect(("saffire-net", socket_number))
 
         # Send update command
         log.info("Sending update command...")

@@ -9,7 +9,6 @@
 # 2022 MITRE eCTF competition, and may not meet MITRE standards for quality.
 # Use this code at your own risk!
 
-
 FROM ubuntu:focal
 
 # Add environment customizations here
@@ -29,7 +28,7 @@ ADD host_tools/ /host_tools
 ADD bootloader /bl_build
 
 # Generate Secrets
-RUN /host_tools/generate_secrets
+RUN sh /host_tools/generate_secrets
 
 # Create EEPROM contents
 RUN echo "Bootloader Data" > /bootloader/eeprom.bin

@@ -32,7 +32,5 @@ ADD platform/ /platform
 RUN mkdir /flash
 RUN mkdir /eeprom
 
-RUN ls /platform
-
 # Create padded binaries for the system bootstrappers
-RUN /platform/create_images
+RUN python3 /platform/create_images.py

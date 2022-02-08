@@ -1,5 +1,3 @@
-#!/usr/bin/python3 -u
-
 # 2022 eCTF
 # Bootloader Restart Utility
 # Jake Grycel

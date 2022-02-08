@@ -27,7 +27,7 @@ def boot(socket_number: int, release_message_file: Path):
 
     # Connect to the bootloader
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.connect(("localhost", socket_number))
+        sock.connect(("saffire-net", socket_number))
 
         # Send boot command
         log.info("Sending boot command...")

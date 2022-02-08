@@ -32,15 +32,98 @@ using `git fetch example`.
 
 ## Environment Setup
 
-When running this code for the first time, you must pull the newest version of
-the eCTF custom QEMU (emulator) for use in the challenge. Run the following to
-get the appropriate emulator image:
+### Development Server
+
+The development servers provided for you have been set up with all the necessary
+packages for building and running the SAFFIRe system with Docker. When running
+this code for the first time, you must pull the newest version of the eCTF
+custom QEMU (emulator) for use in the challenge. Run the following to get the
+appropriate emulator image:
 
 ```bash
 docker pull ectf/ectf-qemu:tiva
 ```
 
-## Creating and Launching a Deployment
+### Personal Computer / Virtual Machine
+
+To run the system on your local machine for either the physical or emulated
+device, you must install Docker and Python. Since the Docker image containing
+the Tiva C emulator is only built for the `arm64` architecture, we do not
+guarantee that you can run the emulated system on your own local machine for VM.
+
+#### Installing Docker Desktop (Windows and Mac)
+
+Windows users will install Docker Desktop on Windows following the instructions
+on [this page](https://docs.docker.com/desktop/windows/install/). We recommend
+using the WSL2 backend. Mac users will install Docker Desktop on Mac following
+the instructions on [this page](https://docs.docker.com/desktop/mac/install/).
+
+Once you download and run the installer, you should start Docker Desktop if it
+does not start automatically and agree to the terms. *Note: Docker Desktop
+requires that anyone using Docker Desktop as a part of their work in a large
+organization needs to buy a license. This should not apply to any participants
+since you are using it for educational and personal purposes.*
+
+Once you have Docker Desktop installed, you will have to run it in the
+background when running SAFFIRE. To be able to use Docker when running the
+system, make sure that you have a command line environment that can run Docker
+commands. This should be automatically set up in your `PATH` environment
+variable, so running the SAFFIRe commands should work in Windows Command Prompt
+and Powershell.
+
+#### Installing Docker Engine (Linux)
+
+Linux uses will install Docker Engine following the instructions on
+[this page](https://docs.docker.com/engine/install/). Click on the link for your
+Linux distribution and you will be brought to the specific instructions for
+installing docker on your computer. Be sure to follow the
+[post-installation instructions](https://docs.docker.com/engine/install/linux-postinstall/)
+to set up your user with privileges to run Docker containers. This page also
+contains instructions on how to start Docker engine automatically at startup,
+but you can start it per-session with `sudo service docker start`.
+
+#### Installing Python3
+
+There are a number of ways to install Python 3 on your computer. Mac and Windows
+users can install it directly from [https://www.python.org/downloads/], and
+Linux users can install it through their system package manager. There are lots
+of tutorials online for how to install Python 3. Another option is to use
+[https://www.anaconda.com/products/individual](Anaconda) or
+[https://docs.conda.io/en/latest/miniconda.html](Miniconda3), which are Python
+distribution manager thats include multiple versions of python and an easy way
+to set up different environments and install compatiable packages together.
+
+#### Installing Code Composer Studio (for physical system only)
+
+To debug the physical microcontroller you need to install Texas Instruments Code
+Composer Studio (CCS). Download the installer from
+[this page](https://www.ti.com/tool/CCSTUDIO) (scroll down to "Downloads", click
+"Download options" for *CCSTUDIO*, then click the "single file installer" for
+your OS). This will download as a compressed archive, which you must extract and
+navigate into to find the installer.
+
+When installing, you must accept the license agreement and then go through a
+system check. If you have recently installed other programs that require a
+restart, the CCS installer will suggest that you restart your computer.
+Additionally, CCS may have package dependencies on Linux, which you can find on
+[this page](https://software-dl.ti.com/ccs/esd/documents/ccsv11_linux_host_support.html).
+Then, confirm the installation folder. We recommend that you keep the default.
+Then, proceed with "Custom Installation".
+
+You only need to enable support for the TM4C12x ARM Cortex-M4F core-based MCUs,
+and click "next". Make sure the Segger J-Link debug probe is selected in the the
+debug probes list and click "next". Then click "next" until the installation
+starts. *At the end of installation on Linux*: you may have to run the USB cable
+drivers with `sudo sh <path-to-ccs1110/ccs/install_scripts/install_drivers.sh`.
+
+#### PySerial (for physical system only)
+
+After installing Python 3 you will need to install the `pyserial` package. See
+the documentation for the specific Python 3 installation you set up on how to
+install this package.
+
+
+## Creating and Launching a Deployment (Emulated)
 
 To launch the example SAFFIRe system (**and earn the Boot Reference flag**),
 follow these steps. **Note: you can change the values of these arguments.
@@ -108,20 +191,20 @@ are printed in the bootloader container when processes connect and disconnect.
 If you run in interactive mode, you will have to open another terminal to run
 the host tools.
 
-### 3. Protect the SAFFIRe Files
+### 3. Protect the Avionic Device Files
 
 We now need to protect the firmware and configuration files.
 This can be done with the following commands:
 
 ```bash
-python3 tools/run_saffire.py fw-protect --emulated \
+python3 tools/run_saffire.py fw-protect \
     --sysname saffire-test \
     --fw-root firmware/ \
     --raw-fw-file example_fw.bin \
     --protected-fw-file example_fw.prot \
     --fw-version 2 \
     --fw-message 'hello world'
-python3 tools/run_saffire.py cfg-protect --emulated \
+python3 tools/run_saffire.py cfg-protect \
     --sysname saffire-test \
     --cfg-root configuration/ \
     --raw-cfg-file example_cfg.bin \
@@ -139,12 +222,12 @@ Now that we have protected firmware and configuration images, we can
 load them onto the device with the following commands:
 
 ```bash
-python3 tools/run_saffire.py fw-update --emulated \
+python3 tools/run_saffire.py fw-update \
     --sysname saffire-test \
     --fw-root firmware/ \
     --uart-sock 1337 \
     --protected-fw-file example_fw.prot
-python3 tools/run_saffire.py cfg-load --emulated \
+python3 tools/run_saffire.py cfg-load \
     --sysname saffire-test \
     --cfg-root configuration/ \
     --uart-sock 1337 \
@@ -159,11 +242,11 @@ With firmware and configurations loaded onto the bootloader, we can now use the
 readback functionality with the following commands:
 
 ```bash
-python3 tools/run_saffire.py fw-readback --emualted \
+python3 tools/run_saffire.py fw-readback \
     --sysname saffire-test \
     --uart-sock 1337 \
     --rb-len 100
-python3 tools/run_saffire.py cfg-readback --emulated \
+python3 tools/run_saffire.py cfg-readback \
     --sysname saffire-test \
     --uart-sock 1337 \
     --rb-len 100
@@ -177,11 +260,11 @@ the unprotected firmware.
 With firmware and configurations loaded onto the bootloader, we can now boot the device:
 
 ```bash
-python3 tools/run_saffire.py boot --emulated \
+python3 tools/run_saffire.py boot \
     --sysname saffire-test \
     --uart-sock 1337 \
     --boot-msg-file boot.txt
-python3 tools/run_saffire.py monitor --emulated \
+python3 tools/run_saffire.py monitor \
     --sysname saffire-test \
     --uart-sock 1337 \
     --boot-msg-file boot.txt
@@ -217,6 +300,154 @@ with:
 ```bash
 python3 tools/run_saffire.py kill-system --emulated --sysname saffire-test
 ```
+
+
+## Running SAFFIRe with the Physical Device
+
+Running SAFFIRe on the physical device uses the same `run_saffire.py` commands
+as the emulated system, with a few additional options. Follow these steps to
+build the system, load the device, and start the bootloader. *Note: If you are
+using an Anaconda or Miniconda-based Python 3 installation, you may have to use
+`python` instead of `python3` while running these commands*.
+
+### 1. Building the Deployment
+
+Create the system using:
+
+```bash
+python3 tools/run_saffire.py build-system --physical \
+    --sysname saffire-test \
+    --oldest-allowed-version 1
+```
+
+This will create two Docker images based on the host-tools and bootloader in the
+repo:
+
+- saffire-test/host_tools
+- saffire-test/bootloader
+
+### 2.a. Install the Device Bootstrapper (First-Time-Setup)
+
+In order to automatically load the bootloader on to the physical device, you
+must first install the MITRE bootstrapper provided in the `platform` folder.
+Start Code Composer Studio, which will ask you for a folder to set up a
+workspace in. You can use the default option or provide your own; the workspace
+will only be used to store debug and program load configuration files.
+
+Once the workspace opens, go to `File -> New -> Target Configuration` to set up
+a new board configuration. Rename it to `TivaConfig.ccxml`, and store it in your
+workspace folder (uncheck the shared location box and enter your workspace
+folder). After creating the file, an editor will open with a few device options.
+Select "Stellaris In-Circuit Debug Interface" for the connection type, and "Tiva
+TM4C123GH6PM" as the device. Then click "Save".
+
+Next, go to `Run -> Debug Configurations`. Select "Code Composer Studio - Device
+Debugging" on the left panel, and then click the "New Launch Configuration"
+button above the left panel. In the main panel that opens, change the "Name" to
+`bootstrapper_load`, and choose the `TivaConfiguration.ccxml` file as the
+"Target Configuration"; you will have to navigate to it through the "File
+System" button. Then, in the "Program" tab, edit the "Program" field to point to
+`<ectf-repo-root/platform/bootstrapper.elf`, and make sure the "Loading
+options" are set to "Load program".
+
+In the "Target" tab, under the "Auto Run and Launch Options" category, check the
+boxes for "Halt the target before any debugger access" and "Connect to the
+target on debugger startup". Click the "Apply" button to save all these
+settings. Finally, plug in the board, turn it on with the top switch, and click
+"Debug". This will open up a debugger window and install the bootstrapper on the
+board. You can then click the red square "Stop" button near the top of the
+screen to exit the debug window.
+
+If you ever need to re-install the bootstrapper for some reason (maybe you
+corrupt the Flash memory containing the bootstrapper), you can plug in the
+board, and go to `Run -> Load -> bootstrapper_load`. This will briefly open a
+debug window, install the bootstrapper, and then close the debug view. Remember,
+this step does not have to be run every time. As long as you have the
+bootstrapper installed on the board, you can proceed directly from
+`build-system` to `load-device`.
+
+### 2.b. Load the SAFFIRe Bootloader
+
+To load your SAFFIRe bootloader into the device, plug in the microcontroller,
+turn it **OFF**, and run the load step:
+
+```bash
+python3 tools/run_saffire.py load-device --physical --sysname saffire-test
+```
+
+This will start the bootstrap loader which looks for a serial port to open. When
+the tool prints a message to turn on the device, turn it on and wait for the
+load process to complete. While loading, the bootstrap loader will print out the
+name of the serial port it connected to, which you will need for the
+`launch-bootloader` step. Take note of this and keep it for future use, since
+the same device should have the same serial port name each time you plug it in.
+
+If you shutdown and restart the device, you do not need to load the bootloader
+again; the `load-device` step is only necessary when building a new bootlaoder.
+At power-up, the bootstrapper will check if an update is requested and then
+start the SAFFIRe bootloader, which is indicated by a blue LED turning on.
+
+This step will also automatically copy SAFFIRe bootloader ELF to your local
+files so you can load debug symbols into the CCS debugger. With the above
+invocation it will be called `saffire-test-bootloader.elf.deleteme`.
+
+### 2.c. Set Up the CCS Debugger (First-Time Setup)
+
+You can use CCS to debug the bootloader running on the physical device; this
+debugger is particularly useful because of its graphical interface and easy
+access into all the system registers. The first time you debug on the physical
+device, you need to create another debug configuration that loads the bootloader
+binary symbols, but does not load the program itself (that is accomplished by
+the bootstrapper).
+
+Once again, go to `Run -> Debug Configurations`, click on "Code Composer
+Studio - Device Debugging" on the left panel and click "New Launch
+Configuration". Call this one `saffire_debug` and set `TivaConfiguration.ccxml`
+as the target configuration. In the "Program" tab, set the "Program" to point
+to the `saffire-test-bootloader.elf.deleteme`; *Note: You will have to make all
+file types visible as the default file selector window will filter out the file
+due to the `.deleteme`*. Then, set "Load symbols only" as the "Loading options".
+
+In the "Target" tab, under the "Auto Run and Launch Options" category, check the
+"Halt the target before any debugger access" and "Connect to the target on
+debugger startup" boxes. You may set other options on this tab as you wish.
+
+Finally, in the "Source" tab click the "Add..." button, select "File System
+Directory" as the type, click "OK", set the target directory to
+`<ectf-repo-root>/bootloader`, and check the "Search subfolders" box. This will
+allow the debugger to find all the source files referenced in the bootloader ELF
+file. Click "OK" to exit the window, click "Apply" in the main configuration
+window, and click "Debug" to start a debug session. During this first time setup
+you can instantly close the debug view with the square red "stop" button.
+
+In the future, when the device is running, you can start the debugger by
+clicking the dropdown arrow next to the bug icon at the top of the CCS window
+and select `saffire_debug` to start the debugger.
+
+### 3. Start the Bootloader Bridge
+
+Since the bootstrapper launches the SAFFIRe bootloader automatically, the
+`launch-bootloader` step for the physical device flow starts a bridge between
+the device serial port and the UART socket that the host tools connect to. This
+bridge will take up a terminal, so make sure to open another one to run any host
+tools. Using the serial port printed out by the bootstrap loader, run this
+command:
+
+```bash
+mkdir socks
+python3 tools/run_saffire.py launch-bootloader --physical  \
+    --sysname saffire-test \
+    --uart-sock 1337 \
+    --serial-port <device_serial_port_name>
+```
+
+### 4. Host Tools
+
+The rest of the SAFFIRe steps are run using the exact same commands as shown in
+the earlier emulated device flow. You can run them in a new terminal and they
+will interact with the device over the bootloader bridge started in the previous
+step. *Note: `tools/emulator_reset.py` will not work on the physical device. To
+soft reset the bootloader, press button SW2 on the development board*.
 
 
 ## Automating SAFFIRe Operation
@@ -259,6 +490,16 @@ python3 tools/run_saffire.py launch-bootloader @saffire.cfg --uart-sock=1338
 By using the `launch-bootloader-gdb` command, you can easily attach GDB
 to the bootloader. To see the output of the host tools in real time, you will
 have to run the debugger and host tools in separate windows. 
+
+**Note:** By default GDB will not find the bootloader source files. Once inside
+a GDB session, run the following to point GDB to the sources:
+
+```bash
+(gdb) directory bootloader
+```
+
+Now, when you break or inspect the code, you will be able to view the C source
+corresponding to the disassembly
 
 **Quick GDB Reference:**
 

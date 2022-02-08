@@ -101,9 +101,6 @@ uint32_t uart_read(uint32_t uart, uint8_t *buf, uint32_t n)
 
     for (read = 0; read < n; read++) {
         buf[read] = (uint8_t)uart_readb(uart);
-
-        // give QEMU some time to queue the next byte if it's there
-        for (int i = 0; i < 100000; i++) *buf = *buf;
     }
     return read;
 }
@@ -128,9 +125,6 @@ uint32_t uart_readline(uint32_t uart, uint8_t *buf)
             buf[read] = c;
             read++;
         }
-
-        // give QEMU some time to queue the next byte if it's there
-        for (int i = 0; i < 100000; i++) *buf = *buf;
     } while ((c != '\n') && (c != '\0'));
 
     buf[read] = '\0';

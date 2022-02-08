@@ -29,7 +29,7 @@ def readback(socket_number, region, num_bytes):
     # Connect to the bootoader
     log.info("Connecting socket...")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.connect(("localhost", socket_number))
+        sock.connect(("saffire-net", socket_number))
 
         # Send readback command
         log.info("Sending readback command...")

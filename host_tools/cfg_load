@@ -33,7 +33,7 @@ def load_configuration(socket_number: int, config_file: Path):
     # Connect to the bootloader
     log.info("Connecting socket...")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.connect(("localhost", socket_number))
+        sock.connect(("saffire-net", socket_number))
 
         # Send configure command
         log.info("Sending configure command...")

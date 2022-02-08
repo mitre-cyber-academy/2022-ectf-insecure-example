@@ -40,7 +40,7 @@ class Sock:
         if self.network:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.sock.bind(("localhost", int(sock_path)))
+            self.sock.bind(("0.0.0.0", int(sock_path)))
         else:
             # Make sure the socket does not already exist
             try:
@@ -68,6 +68,7 @@ class Sock:
         shandler.setFormatter(logging.Formatter(LOG_FORMAT))
 
         self.logger = logging.getLogger(f"{sock_path}_log")
+        self.logger.addHandler(fhandler)
         self.logger.addHandler(shandler)
         self.logger.setLevel(log_level)
 

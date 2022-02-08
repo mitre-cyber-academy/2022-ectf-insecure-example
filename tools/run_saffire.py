@@ -1,5 +1,3 @@
-#!/bin/python3
-
 # 2022 eCTF
 # SAFFIRe Run Interface
 # Jake Grycel
@@ -20,9 +18,11 @@ import os
 from pathlib import Path
 import subprocess
 
+import load_image
+import serial_socket_bridge
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s:%(name)-12s%(levelname)-8s %(message)s"
+    level=logging.INFO, format="%(asctime)s:%(name)-18s%(levelname)-8s %(message)s"
 )
 log = logging.getLogger(Path(__file__).name)
 
@@ -101,13 +101,14 @@ def kill_system(args):
             cmd = ["docker", "rm", f"{cid}"]
             subprocess.run(cmd)
 
+    log.info("All system containers stopped and removed")
+
 
 def build_system(args):
 
     # Check for type
     if args.physical:
-        log.info("build_system: Physical systems not supported yet")
-        exit(0)
+        parent = "alpine:3.12"
     elif args.emulated:
         parent = "ectf/ectf-qemu:tiva"
     else:
@@ -115,6 +116,8 @@ def build_system(args):
 
     # Get Docker-managed volumes
     secrets_root = get_volume(args.sysname, "secrets")
+
+    log.info("Removing system volumes (if they exist)")
 
     # Remove the old secrets
     cmd = ["docker", "volume", "rm", f"{secrets_root}"]
@@ -124,6 +127,8 @@ def build_system(args):
     cmd = [
         "docker",
         "build",
+        "--progress",
+        "plain",
         ".",
         "-f",
         "dockerfiles/1_build_saffire.Dockerfile",
@@ -138,6 +143,8 @@ def build_system(args):
     cmd = [
         "docker",
         "build",
+        "--progress",
+        "plain",
         ".",
         "-f",
         "dockerfiles/2_create_device.Dockerfile",
@@ -151,7 +158,7 @@ def build_system(args):
     subprocess.run(cmd)
 
 
-def clear_device_state(args):
+def load_emulated_device(args):
     # Get Docker-managed volumes
     flash_root = get_volume(args.sysname, "flash")
     eeprom_root = get_volume(args.sysname, "eeprom")
@@ -164,21 +171,56 @@ def clear_device_state(args):
     subprocess.run(cmd)
 
 
+def load_physical_device(args):
+    # Copy bootloader physical image from device container
+    cmd = ["docker", "create", f"{args.sysname}/bootloader"]
+    container_id = (
+        subprocess.run(cmd, capture_output=True).stdout.decode("latin-1").rstrip()
+    )
+
+    cmd = [
+        "docker",
+        "cp",
+        f"{container_id}:bootloader/phys_image.bin",
+        f"{args.sysname}-bl_image.bin.deleteme",
+    ]
+    subprocess.run(cmd)
+
+    log.info(
+        "Copied image to load into physical device:"
+        f" {args.sysname}-bl_image.bin.deleteme"
+    )
+
+    # Copy bootloader ELF from device container
+    cmd = [
+        "docker",
+        "cp",
+        f"{container_id}:bootloader/bootloader.elf",
+        f"{args.sysname}-bootloader.elf.deleteme",
+    ]
+    subprocess.run(cmd)
+
+    log.info(f"Copied bootloader ELF: {args.sysname}-bootloader.elf.deleteme")
+
+    cmd = ["docker", "rm", "-v", f"{container_id}"]
+    subprocess.run(cmd)
+
+    if load_image.load(f"{args.sysname}-bl_image.bin.deleteme") != 0:
+        log.error("load_device: Physical device load failed'")
+        exit(1)
+
+
 def load_device(args):
 
     # Check for type
     if args.emulated:
-        clear_device_state(args)
+        load_emulated_device(args)
     elif args.physical:
-        if args.serial_port is None:
-            log.error("load_device: Missing '--serial-port' for physical flow")
-            exit(1)
-        log.info("load_device: Physical systems not supported yet")
-        exit(0)
+        load_physical_device(args)
     else:
         log.error("load_device: Missing '--emulated' or '--physical'")
         exit(1)
-    log.info('Loaded device')
+    log.info("Loaded SAFFIRe bootloader into device")
 
 
 def launch_emulator(args, interactive=False, do_gdb=False):
@@ -200,12 +242,15 @@ def launch_emulator(args, interactive=False, do_gdb=False):
     else:
         dock_opt = "-d"
 
+    log.info("Starting emulator")
+
     cmd = [
         "docker",
         "run",
         f"{dock_opt}",
-        "--network",
-        "host",
+        "-p",
+        f"{args.uart_sock}:{args.uart_sock}",
+        "--add-host=host.docker.internal:host-gateway",
         "-v",
         f"{sock_root}:/external_socks",
         "-v",
@@ -222,6 +267,7 @@ def launch_emulator(args, interactive=False, do_gdb=False):
     subprocess.run(cmd)
 
     if do_gdb:
+        # Copy bootloader.elf from the bootloader container to the local filesystem
         cmd = ["docker", "create", f"{args.sysname}/bootloader"]
         container_id = (
             subprocess.run(cmd, capture_output=True).stdout.decode("latin-1").rstrip()
@@ -234,6 +280,8 @@ def launch_emulator(args, interactive=False, do_gdb=False):
             f"{args.sysname}-bootloader.elf.deleteme",
         ]
         subprocess.run(cmd)
+
+        log.info(f"Copied bootloader ELF: {args.sysname}-bootloader.elf.deleteme")
 
         cmd = ["docker", "rm", "-v", f"{container_id}"]
         subprocess.run(cmd)
@@ -260,6 +308,11 @@ def launch_emulator(args, interactive=False, do_gdb=False):
         )
 
 
+def launch_bootloader_bridge(args):
+    # Launch bridge (takes up terminal)
+    serial_socket_bridge.bridge(args.uart_sock, args.serial_port)
+
+
 def launch_bootloader(args):
     # Check for type
     if args.emulated:
@@ -271,8 +324,7 @@ def launch_bootloader(args):
         if args.serial_port is None:
             log.error("launch_bootloader: Missing '--serial-port' for physical flow")
             exit(1)
-        log.info("launch_bootloader: Physical systems not supported yet")
-        exit(0)
+        launch_bootloader_bridge(args)
     else:
         log.error("launch_bootloader: Missing '--emulated' or '--physical'")
         exit(1)
@@ -306,6 +358,7 @@ def fw_protect(args):
         "docker",
         "run",
         "-i",
+        "--add-host=host.docker.internal:host-gateway",
         "-v",
         f"{secrets_root}:/secrets",
         "-v",
@@ -360,8 +413,8 @@ def fw_update(args):
         "docker",
         "run",
         "-i",
-        "--network",
-        "host",
+        "--add-host",
+        "saffire-net:host-gateway",
         "-v",
         f"{fw_root}:/firmware",
         f"{args.sysname}/host_tools",
@@ -385,8 +438,8 @@ def cfg_load(args):
         "docker",
         "run",
         "-i",
-        "--network",
-        "host",
+        "--add-host",
+        "saffire-net:host-gateway",
         "-v",
         f"{cfg_root}:/configuration",
         f"{args.sysname}/host_tools",
@@ -408,8 +461,8 @@ def readback(args, rb_region):
         "docker",
         "run",
         "-i",
-        "--network",
-        "host",
+        "--add-host",
+        "saffire-net:host-gateway",
         "-v",
         f"{secrets_root}:/secrets",
         f"{args.sysname}/host_tools",
@@ -440,8 +493,8 @@ def boot(args):
         "docker",
         "run",
         "-i",
-        "--network",
-        "host",
+        "--add-host",
+        "saffire-net:host-gateway",
         "-v",
         f"{msg_root}:/messages",
         f"{args.sysname}/host_tools",
@@ -463,8 +516,8 @@ def monitor(args):
         "docker",
         "run",
         "-i",
-        "--network",
-        "host",
+        "--add-host",
+        "saffire-net:host-gateway",
         "-v",
         f"{msg_root}:/messages",
         f"{args.sysname}/host_tools",
@@ -478,9 +531,21 @@ def monitor(args):
     subprocess.run(cmd)
 
 
+def cleanup(args):
+    f_path = Path(f"{args.sysname}-bootloader.elf.deleteme")
+    if f_path.exists():
+        f_path.unlink()
+
+    f_path = Path(f"{args.sysname}-bl_image.bin.deleteme")
+    if f_path.exists():
+        f_path.unlink()
+
+    log.info("Removed temporary files")
+
+
 def get_args():
     parser = argparse.ArgumentParser(fromfile_prefix_chars="@")
-    subparsers = parser.add_subparsers(dest='cmd', help="sub-command help")
+    subparsers = parser.add_subparsers(dest="cmd", help="sub-command help")
     subparsers.required = True
 
     parser_kill = subparsers.add_parser("kill-system", help="kill-system help")
@@ -697,6 +762,11 @@ def get_args():
         help="File path for host to read booted release messages from",
     )
     parser_monitor.set_defaults(func=monitor)
+
+    # Clean up temporary files
+    parser_cleanup = subparsers.add_parser("cleanup", help="cleanup help")
+    parser_cleanup.add_argument("--sysname", required=True, help="SAFFIRe system name")
+    parser_cleanup.set_defaults(func=cleanup)
 
     args, unknown = parser.parse_known_args()
 

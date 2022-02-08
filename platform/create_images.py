@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/bin/python3
 
 # 2022 eCTF
 # Create images for bootstrappers

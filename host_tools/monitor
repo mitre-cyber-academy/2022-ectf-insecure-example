@@ -36,7 +36,7 @@ def monitor(socket_number: int, mfile: str):
 
     # Connect to the firmware
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as hsock:
-        hsock.connect(("localhost", socket_number))
+        hsock.connect(("saffire-net", socket_number))
 
         try:
             # Send init command
