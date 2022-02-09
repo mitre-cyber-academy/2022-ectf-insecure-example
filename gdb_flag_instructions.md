@@ -3,6 +3,19 @@
 This tutorial will show you how to use the GDB debugger to walk through and
 interract with a running SAFFIRe bootloader.
 
+## 0. Pull the GDB Challenge Bootloader Image
+
+**Note: You only need to do this once on your server**
+
+You will need the bootloader Docker image from Dockerhub to complete these
+instructions. Pull the image and create a new tag for it to be compatible with
+`tools/run_saffire.py`:
+
+```bash
+docker pull ectf/bootloader:gdb
+docker docker image tag ectf/bootloader:gdb gdb-challenge/bootloader
+```
+
 
 ## 1. Launch Device in Debug Mode
 
