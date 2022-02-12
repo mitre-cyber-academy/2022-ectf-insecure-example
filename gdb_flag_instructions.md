@@ -13,7 +13,7 @@ instructions. Pull the image and create a new tag for it to be compatible with
 
 ```bash
 docker pull ectf/bootloader:gdb
-docker docker image tag ectf/bootloader:gdb gdb-challenge/bootloader
+docker image tag ectf/bootloader:gdb gdb-challenge/bootloader
 ```
 
 
