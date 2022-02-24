@@ -29,8 +29,8 @@
 
 /*
  * Firmware:
- *      Version: 0x0002B400 : 0x0002B404 (4B)
- *      Size:    0x0002B404 : 0x0002B408 (4B)
+ *      Size:    0x0002B400 : 0x0002B404 (4B)
+ *      Version: 0x0002B404 : 0x0002B408 (4B)
  *      Msg:     0x0002B408 : 0x0002BC00 (~2KB = 1KB + 1B + pad)
  *      Fw:      0x0002BC00 : 0x0002FC00 (16KB)
  * Configuration:
