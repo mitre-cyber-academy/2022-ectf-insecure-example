@@ -45,7 +45,31 @@ need to re-run `docker image tag ectf/bootloader:sc <sysname>/bootloader:sc` the
 next time you want to work on the SC challenge.
 
 
-## 1. Launch the Bootloader with the SC Emulator
+## 1.a. Clear Previous Emulator State
+
+Before running the challenge bootloader with your chosen `sysname`, it is good
+practice to remove old state in the emulated device to avoid unexpected
+behavior. Run the following command with your chosen `sysname`:
+
+```bash
+python3 tools/run_saffire.py load-device --emulated \
+    --sysname <sysname>
+```
+
+If you get an error saying `No such volume`, that is okay; it means the state
+has already been cleared.
+
+If you get an error saying `volume is in use`, kill the system first with:
+
+
+```bash
+python3 tools/run_saffire.py kill-system --sysname <sysname>
+```
+
+Then run the `load-device` command again.
+
+
+## 1.b. Launch the Bootloader with the SC Emulator
 
 Instead of the typical `launch-bootloader` target of `tools/run_saffire.py`, we
 will use the `launch-bootloader-sc` target instead to run the device with the
