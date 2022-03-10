@@ -85,7 +85,7 @@ side-channel samples, and storing the samples in `aes_traces.dat`
 
 ```bash
 python3 tools/sc_example.py --uart-sock <uart-sock> \
-    --sc-sock socks/sc_probe.py \
+    --sc-sock socks/sc_probe.sock \
     --i-file aes_input.bin \
     --o-file aes_traces.dat \
     --byte-skip-count 0 \
