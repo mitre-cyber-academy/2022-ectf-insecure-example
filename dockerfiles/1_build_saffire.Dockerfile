@@ -1,6 +1,6 @@
 # 2022 eCTF
 # Host-Tools and Bootloader Creation Dockerfile
-# Andrew Mirghassemi
+# Jake Grycel
 #
 # (c) 2022 The MITRE Corporation
 #

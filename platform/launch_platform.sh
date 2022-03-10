@@ -22,8 +22,17 @@ while [ "$1" != "" ]; do
         shift
         uart_sock=$1
         ;;
+    -s | --side-channel )
+        shift
+        if [[ $1 != 0 ]]; then
+          do_sc=1
+        fi
+        ;;
     -g | --gdb )
-        gdb_arg="-gdb unix:/external_socks/gdb.sock,server"
+        shift
+        if [[ $1 != 0 ]]; then
+          gdb_arg="-gdb unix:/external_socks/gdb.sock,server"
+        fi
         ;;
   esac
   shift
@@ -38,23 +47,36 @@ fi
 # Set up external emulator sockets
 ext_sock_root="/external_socks"
 ext_restart_sock="$ext_sock_root/restart.sock"
+ext_sc_sock="$ext_sock_root/sc_probe.sock"
 net_uart_sock="$uart_sock"
 
 # Setup internal emulator sockets
 int_sock_root="/internal_socks"
 int_host_sock="$int_sock_root/host.sock"
 int_restart_sock="$int_sock_root/restart.sock"
+int_sc_sock="/socks/sc_probe.sock"
 mkdir "$int_sock_root"
 
 # Spin up the interface
-python3 -u /platform/bl_interface.py --data-bl-sock "$int_host_sock" \
-  --data-host-sock "$net_uart_sock" \
-  --restart-bl-sock "$int_restart_sock" \
-  --restart-host-sock "$ext_restart_sock" &
+if [ ! -z ${do_sc} ]; then
+  # Start interface with side-channel sockets enabled
+  mkdir /socks
+
+  python3 -u /platform/bl_interface.py --data-bl-sock "$int_host_sock" \
+    --data-host-sock "$net_uart_sock" \
+    --restart-bl-sock "$int_restart_sock" \
+    --restart-host-sock "$ext_restart_sock" \
+    --sc-bl-sock "$int_sc_sock" \
+    --sc-host-sock "$ext_sc_sock" &
+else
+  python3 -u /platform/bl_interface.py --data-bl-sock "$int_host_sock" \
+    --data-host-sock "$net_uart_sock" \
+    --restart-bl-sock "$int_restart_sock" \
+    --restart-host-sock "$ext_restart_sock" &
+fi
 
 # Give time for the sockets and eFuse to initialize
 sleep 2
-
 
 # Spin up the emulator -- correct version (side-channel or not) is selected by makefile
 qemu-system-arm -M lm3s6965evb -nographic -monitor none \

@@ -14,17 +14,16 @@
 import time
 import argparse
 import logging
-import os
 from pathlib import Path
 import subprocess
 
 import load_image
 import serial_socket_bridge
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s:%(name)-18s%(levelname)-8s %(message)s"
-)
+
 log = logging.getLogger(Path(__file__).name)
+
+ROOT_PATH = Path(__file__, "..", "..").resolve()
 
 
 def make_dirs(dir_list):
@@ -48,7 +47,7 @@ def get_volume(sysname, volume):
 
 def kill_system(args):
     # Stop running bootloader containers
-    cmd = ["docker", "ps", "-q", "--filter", f"ancestor={args.sysname}/bootloader"]
+    cmd = ["docker", "ps", "-q", "--filter", f"name={args.sysname}-bootloader"]
     bl_container_ids = (
         subprocess.run(cmd, capture_output=True).stdout.decode("latin-1").rstrip()
     )
@@ -58,14 +57,7 @@ def kill_system(args):
             subprocess.run(cmd)
 
     # Remove stopped bootloader containers
-    cmd = [
-        "docker",
-        "ps",
-        "-a",
-        "-q",
-        "--filter",
-        f"ancestor={args.sysname}/bootloader",
-    ]
+    cmd = ["docker", "ps", "-a", "-q", "--filter", f"name={args.sysname}-bootloader"]
     bl_container_ids = (
         subprocess.run(cmd, capture_output=True).stdout.decode("latin-1").rstrip()
     )
@@ -105,12 +97,13 @@ def kill_system(args):
 
 
 def build_system(args):
-
     # Check for type
     if args.physical:
         parent = "alpine:3.12"
+        parent_sc = "alpine:3.12"
     elif args.emulated:
         parent = "ectf/ectf-qemu:tiva"
+        parent_sc = "ectf/ectf-qemu:tiva_sc"
     else:
         exit("build_system: Missing '--emulated' or '--physical'")
 
@@ -129,9 +122,9 @@ def build_system(args):
         "build",
         "--progress",
         "plain",
-        ".",
+        f"{args.root_path}",
         "-f",
-        "dockerfiles/1_build_saffire.Dockerfile",
+        f"{args.root_path}/dockerfiles/1_build_saffire.Dockerfile",
         "-t",
         f"{args.sysname}/host_tools",
         "--build-arg",
@@ -145,15 +138,33 @@ def build_system(args):
         "build",
         "--progress",
         "plain",
-        ".",
+        f"{args.root_path}",
         "-f",
-        "dockerfiles/2_create_device.Dockerfile",
+        f"{args.root_path}/dockerfiles/2_create_device.Dockerfile",
         "-t",
-        f"{args.sysname}/bootloader",
+        f"{args.sysname}/bootloader:base",
         "--build-arg",
         f"SYSNAME={args.sysname}",
         "--build-arg",
         f"PARENT={parent}",
+    ]
+    subprocess.run(cmd)
+
+    # Build device copy with side-channel emulator
+    cmd = [
+        "docker",
+        "build",
+        "--progress",
+        "plain",
+        f"{args.root_path}",
+        "-f",
+        f"{args.root_path}/dockerfiles/2_create_device.Dockerfile",
+        "-t",
+        f"{args.sysname}/bootloader:sc",
+        "--build-arg",
+        f"SYSNAME={args.sysname}",
+        "--build-arg",
+        f"PARENT={parent_sc}",
     ]
     subprocess.run(cmd)
 
@@ -173,7 +184,7 @@ def load_emulated_device(args):
 
 def load_physical_device(args):
     # Copy bootloader physical image from device container
-    cmd = ["docker", "create", f"{args.sysname}/bootloader"]
+    cmd = ["docker", "create", f"{args.sysname}/bootloader:base"]
     container_id = (
         subprocess.run(cmd, capture_output=True).stdout.decode("latin-1").rstrip()
     )
@@ -223,24 +234,32 @@ def load_device(args):
     log.info("Loaded SAFFIRe bootloader into device")
 
 
-def launch_emulator(args, interactive=False, do_gdb=False):
+def launch_emulator(args, interactive=False, do_gdb=False, do_sc=False):
 
     # Need abspath for local folder to mount as a Docker volume
-    sock_root = os.path.abspath(args.sock_root)
+    sock_root = Path(args.sock_root).resolve()
     make_dirs([sock_root])
 
     # Get Docker-managed volumes
     flash_root = get_volume(args.sysname, "flash")
     eeprom_root = get_volume(args.sysname, "eeprom")
 
-    gdb_arg = ""
-    if do_gdb:
-        gdb_arg = "--gdb"
-
     if interactive:
         dock_opt = "-i"
     else:
         dock_opt = "-d"
+
+    if do_gdb:
+        gdb_arg = 1
+    else:
+        gdb_arg = 0
+
+    if do_sc:
+        tag = "sc"
+        sc_arg = 1
+    else:
+        tag = "base"
+        sc_arg = 0
 
     log.info("Starting emulator")
 
@@ -257,18 +276,25 @@ def launch_emulator(args, interactive=False, do_gdb=False):
         f"{flash_root}:/flash",
         "-v",
         f"{eeprom_root}:/eeprom",
-        f"{args.sysname}/bootloader",
+        "--name",
+        f"{args.sysname}-bootloader",
+        f"{args.sysname}/bootloader:{tag}",
         "sh",
         "/platform/launch_platform.sh",
         "--uart_sock",
         f"{args.uart_sock}",
+        "--side-channel",
+        f"{sc_arg}",
+        "--gdb",
         f"{gdb_arg}",
     ]
     subprocess.run(cmd)
+    # Wait for a few seconds
+    time.sleep(2)
 
     if do_gdb:
         # Copy bootloader.elf from the bootloader container to the local filesystem
-        cmd = ["docker", "create", f"{args.sysname}/bootloader"]
+        cmd = ["docker", "create", f"{args.sysname}/bootloader:base"]
         container_id = (
             subprocess.run(cmd, capture_output=True).stdout.decode("latin-1").rstrip()
         )
@@ -286,14 +312,12 @@ def launch_emulator(args, interactive=False, do_gdb=False):
         cmd = ["docker", "rm", "-v", f"{container_id}"]
         subprocess.run(cmd)
 
-        # Wait for a few seconds before connecting
-        time.sleep(3)
         cmd = [
             "docker",
             "run",
             "-v",
             f"{sock_root}:/external_socks",
-            f"{args.sysname}/bootloader",
+            f"{args.sysname}/bootloader:base",
             "chmod",
             "777",
             "/external_socks/gdb.sock",
@@ -304,7 +328,7 @@ def launch_emulator(args, interactive=False, do_gdb=False):
             "Launched bootloader with GDB.\n"
             "Run the following to attach to the GDB socket:\n"
             f"gdb-multiarch {args.sysname}-bootloader.elf.deleteme"
-            f" -ex 'target remote {args.sock_root}/gdb.sock'"
+            f" -ex 'target remote {sock_root}/gdb.sock'"
         )
 
 
@@ -330,13 +354,6 @@ def launch_bootloader(args):
         exit(1)
 
 
-def launch_bootloader_gdb(args):
-    if args.sock_root is None:
-        log.error("launch_bootloader_gdb: Missing '--sock-root' for emulated flow")
-        exit(1)
-    launch_emulator(args, do_gdb=True)
-
-
 def launch_bootloader_interactive(args):
     if args.sock_root is None:
         log.error(
@@ -346,12 +363,26 @@ def launch_bootloader_interactive(args):
     launch_emulator(args, interactive=True)
 
 
+def launch_bootloader_gdb(args):
+    if args.sock_root is None:
+        log.error("launch_bootloader_gdb: Missing '--sock-root' for emulated flow")
+        exit(1)
+    launch_emulator(args, do_gdb=True)
+
+
+def launch_bootloader_sc(args):
+    if args.sock_root is None:
+        log.error("launch_bootloader_sc: Missing '--sock-root' for emulated flow")
+        exit(1)
+    launch_emulator(args, do_sc=True)
+
+
 def fw_protect(args):
     # Get Docker-managed volumes
     secrets_root = get_volume(args.sysname, "secrets")
 
     # Need abspath for local folder to mount as a Docker volume
-    fw_root = os.path.abspath(args.fw_root)
+    fw_root = Path(args.fw_root).resolve()
     make_dirs([fw_root])
 
     cmd = [
@@ -382,7 +413,7 @@ def cfg_protect(args):
     secrets_root = get_volume(args.sysname, "secrets")
 
     # Need abspath for local folder to mount as a Docker volume
-    cfg_root = os.path.abspath(args.cfg_root)
+    cfg_root = Path(args.cfg_root).resolve()
     make_dirs([cfg_root])
 
     cmd = [
@@ -405,7 +436,7 @@ def cfg_protect(args):
 
 def fw_update(args):
     # Need abspath for local folder to mount as a Docker volume
-    fw_root = os.path.abspath(args.fw_root)
+    fw_root = Path(args.fw_root).resolve()
 
     make_dirs([fw_root])
 
@@ -430,7 +461,7 @@ def fw_update(args):
 
 def cfg_load(args):
     # Need abspath for local folder to mount as a Docker volume
-    cfg_root = os.path.abspath(args.cfg_root)
+    cfg_root = Path(args.cfg_root).resolve()
 
     make_dirs([cfg_root])
 
@@ -532,13 +563,22 @@ def monitor(args):
 
 
 def cleanup(args):
-    f_path = Path(f"{args.sysname}-bootloader.elf.deleteme")
-    if f_path.exists():
-        f_path.unlink()
+    # Remove artifacts tied to the system name (if they exist)
+    if args.sysname is not None:
+        f_path = Path(f"{args.sysname}-bootloader.elf.deleteme")
+        if f_path.exists():
+            f_path.unlink()
 
-    f_path = Path(f"{args.sysname}-bl_image.bin.deleteme")
-    if f_path.exists():
-        f_path.unlink()
+        f_path = Path(f"{args.sysname}-bl_image.bin.deleteme")
+        if f_path.exists():
+            f_path.unlink()
+
+    # Remove sockets
+    if args.sock_root is not None:
+        f_path = Path(args.sock_root)
+        clear_dir(args.sock_root)
+        if f_path.exists():
+            Path.rmdir(f_path)
 
     log.info("Removed temporary files")
 
@@ -558,6 +598,9 @@ def get_args():
         "--sysname",
         required=True,
         help="SAFFIRe system name",
+    )
+    parser_create.add_argument(
+        "--root-path", default=ROOT_PATH, help="Path to top of repo to build"
     )
     parser_create.add_argument(
         "--oldest-allowed-version",
@@ -640,6 +683,19 @@ def get_args():
         "--uart-sock", required=True, help="UART interface socket"
     )
     parser_bl_gdb.set_defaults(func=launch_bootloader_gdb)
+
+    # Run bootloader with side-channel emulator (emulated only)
+    parser_bl_sc = subparsers.add_parser(
+        "launch-bootloader-sc", help="launch-bootloader-sc help"
+    )
+    parser_bl_sc.add_argument("--sysname", required=True, help="SAFFIRe system name")
+    parser_bl_sc.add_argument(
+        "--sock-root", required=True, help="Directory to place sockets"
+    )
+    parser_bl_sc.add_argument(
+        "--uart-sock", required=True, help="UART interface socket"
+    )
+    parser_bl_sc.set_defaults(func=launch_bootloader_sc)
 
     # Firmware protect
     parser_fw_protect = subparsers.add_parser("fw-protect", help="fw-protect help")
@@ -765,7 +821,8 @@ def get_args():
 
     # Clean up temporary files
     parser_cleanup = subparsers.add_parser("cleanup", help="cleanup help")
-    parser_cleanup.add_argument("--sysname", required=True, help="SAFFIRe system name")
+    parser_cleanup.add_argument("--sysname", help="SAFFIRe system name")
+    parser_cleanup.add_argument("--sock-root", help="Emulated bootloader socket dir")
     parser_cleanup.set_defaults(func=cleanup)
 
     args, unknown = parser.parse_known_args()
@@ -774,11 +831,13 @@ def get_args():
 
 
 def main():
-    # Check that we are running from the root of the repo
-    exec_dir = Path().resolve()
-    expected_git_path = exec_dir / ".git"
-    if not expected_git_path.exists():
-        exit("ERROR: This script must be run from the root of the repo!")
+    # configure logging
+    # this should be here so that logging is only configured when this file is
+    # run as a script. if imported from another module, we don't want to
+    # reconfigure logging
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s:%(name)-18s%(levelname)-8s %(message)s"
+    )
 
     # Get args and call specified function
     args = get_args()
