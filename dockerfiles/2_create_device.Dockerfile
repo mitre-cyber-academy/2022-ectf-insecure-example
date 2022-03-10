@@ -1,6 +1,6 @@
 # 2022 eCTF
 # Device Packager Dockerfile
-# Andrew Mirghassemi
+# Jake Grycel
 #
 # (c) 2022 The MITRE Corporation
 #
