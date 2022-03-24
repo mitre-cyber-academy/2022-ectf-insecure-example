@@ -335,7 +335,7 @@ workspace in. You can use the default option or provide your own; the workspace
 will only be used to store debug and program load configuration files.
 
 Once the workspace opens, go to `File -> New -> Target Configuration` to set up
-a new board configuration. Rename it to `TivaConfig.ccxml`, and store it in your
+a new board configuration. Rename it to `TivaConfiguration.ccxml`, and store it in your
 workspace folder (uncheck the shared location box and enter your workspace
 folder). After creating the file, an editor will open with a few device options.
 Select "Stellaris In-Circuit Debug Interface" for the connection type, and "Tiva
