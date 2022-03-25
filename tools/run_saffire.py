@@ -14,8 +14,11 @@
 import time
 import argparse
 import logging
-from pathlib import Path
+import inspect
 import subprocess
+import asyncio
+
+from pathlib import Path
 
 import load_image
 import serial_socket_bridge
@@ -43,6 +46,63 @@ def clear_dir(d):
 
 def get_volume(sysname, volume):
     return f"{sysname}-{volume}.vol"
+
+
+async def run_asyncio_subprocess(cmd, capture_stdout=False, capture_stderr=False):
+    stdout = None
+    stderr = None
+
+    # Only capture the output when not running in script mode
+    if __name__ != "__main__":
+        if capture_stdout:
+            stdout = asyncio.subprocess.PIPE
+        if capture_stderr:
+            stderr = asyncio.subprocess.PIPE
+
+    proc = await asyncio.create_subprocess_shell(' '.join(cmd), stdout=stdout, stderr=stderr)
+    await proc.wait()
+    return proc
+
+
+def delete_release_message(args):
+    # Get Docker-managed volumes
+    msg_root = get_volume(args.sysname, "messages")
+
+    # Run host tools container and remove the file
+    cmd = [
+        "docker",
+        "run",
+        "-i",
+        "--add-host",
+        "saffire-net:host-gateway",
+        "-v",
+        f"{msg_root}:/messages",
+        f"{args.sysname}/host_tools",
+        "rm",
+        "-f",
+        f"/messages/{args.boot_msg_file}"
+    ]
+    return subprocess.run(cmd)
+
+
+def get_release_message(args):
+    # Get Docker-managed volumes
+    msg_root = get_volume(args.sysname, "messages")
+
+    # Run host tools container and cat the file
+    cmd = [
+        "docker",
+        "run",
+        "-i",
+        "--add-host",
+        "saffire-net:host-gateway",
+        "-v",
+        f"{msg_root}:/messages",
+        f"{args.sysname}/host_tools",
+        "cat",
+        f"/messages/{args.boot_msg_file}"
+    ]
+    return subprocess.run(cmd, capture_output=True)
 
 
 def kill_system(args):
@@ -114,12 +174,19 @@ def build_system(args):
 
     # Remove the old secrets
     cmd = ["docker", "volume", "rm", f"{secrets_root}"]
-    subprocess.run(cmd)
+    p1 = subprocess.run(cmd)
+
+    # Choose whether to force a full container build
+    if args.no_cache:
+        no_cache = "--no-cache"
+    else:
+        no_cache = ""
 
     # Build host tools
     cmd = [
         "docker",
         "build",
+        f"{no_cache}",
         "--progress",
         "plain",
         f"{args.root_path}",
@@ -130,7 +197,11 @@ def build_system(args):
         "--build-arg",
         f"OLDEST_VERSION={args.oldest_allowed_version}",
     ]
-    subprocess.run(cmd)
+    p2 = subprocess.run(cmd, capture_output=True)
+
+    if __name__ == "__main__":
+        printout = p2.stdout.decode()
+        log.info(printout.replace('\\n', '\n'))
 
     # Build device
     cmd = [
@@ -147,8 +218,10 @@ def build_system(args):
         f"SYSNAME={args.sysname}",
         "--build-arg",
         f"PARENT={parent}",
+        "--build-arg",
+        f"EEPROM_SECRET={args.eeprom_secret}",
     ]
-    subprocess.run(cmd)
+    p3 = subprocess.run(cmd, capture_output=True)
 
     # Build device copy with side-channel emulator
     cmd = [
@@ -165,8 +238,14 @@ def build_system(args):
         f"SYSNAME={args.sysname}",
         "--build-arg",
         f"PARENT={parent_sc}",
+        "--build-arg",
+        f"EEPROM_SECRET={args.eeprom_secret}",
     ]
-    subprocess.run(cmd)
+    p4 = subprocess.run(cmd, capture_output=True)
+
+    # "docker volume rm <secrets volume>" was returning an error code when the volume didn't exist
+    # not going to check the returncode of this
+    return [p2, p3, p4]
 
 
 def load_emulated_device(args):
@@ -217,8 +296,8 @@ def load_physical_device(args):
     subprocess.run(cmd)
 
     if load_image.load(f"{args.sysname}-bl_image.bin.deleteme") != 0:
-        log.error("load_device: Physical device load failed'")
-        exit(1)
+        log.error("load_device: Physical device load failed")
+        raise RuntimeError("load_device: Physical device load failed")
 
 
 def load_device(args):
@@ -230,7 +309,7 @@ def load_device(args):
         load_physical_device(args)
     else:
         log.error("load_device: Missing '--emulated' or '--physical'")
-        exit(1)
+        raise RuntimeError("load_device called without specifying '--emulated' or '--physical'")
     log.info("Loaded SAFFIRe bootloader into device")
 
 
@@ -377,7 +456,7 @@ def launch_bootloader_sc(args):
     launch_emulator(args, do_sc=True)
 
 
-def fw_protect(args):
+async def fw_protect(args):
     # Get Docker-managed volumes
     secrets_root = get_volume(args.sysname, "secrets")
 
@@ -401,14 +480,15 @@ def fw_protect(args):
         "--version",
         f"{args.fw_version}",
         "--release-message",
-        f"{args.fw_message}",
+        f"\"{args.fw_message}\"",
         "--output-file",
         f"{args.protected_fw_file}",
     ]
-    subprocess.run(cmd)
+    result = await run_asyncio_subprocess(cmd, capture_stderr=True)
+    return result
 
 
-def cfg_protect(args):
+async def cfg_protect(args):
     # Get Docker-managed volumes
     secrets_root = get_volume(args.sysname, "secrets")
 
@@ -431,10 +511,11 @@ def cfg_protect(args):
         "--output-file",
         f"{args.protected_cfg_file}",
     ]
-    subprocess.run(cmd)
+    result = await run_asyncio_subprocess(cmd, capture_stderr=True)
+    return result
 
 
-def fw_update(args):
+async def fw_update(args):
     # Need abspath for local folder to mount as a Docker volume
     fw_root = Path(args.fw_root).resolve()
 
@@ -451,15 +532,16 @@ def fw_update(args):
         f"{args.sysname}/host_tools",
         "/bin/bash",
         "-c",
-        f"rm -rf /secrets; "
+        f"\"rm -rf /secrets; "
         f"/host_tools/fw_update "
         f"--socket {args.uart_sock} "
-        f"--firmware-file {args.protected_fw_file}",
+        f"--firmware-file {args.protected_fw_file}\"",
     ]
-    subprocess.run(cmd)
+    result = await run_asyncio_subprocess(cmd, capture_stderr=True)
+    return result
 
 
-def cfg_load(args):
+async def cfg_load(args):
     # Need abspath for local folder to mount as a Docker volume
     cfg_root = Path(args.cfg_root).resolve()
 
@@ -476,15 +558,16 @@ def cfg_load(args):
         f"{args.sysname}/host_tools",
         "/bin/bash",
         "-c",
-        f"rm -rf /secrets ; "
+        f"\"rm -rf /secrets ; "
         f"/host_tools/cfg_load "
         f"--socket {args.uart_sock} "
-        f"--config-file {args.protected_cfg_file}",
+        f"--config-file {args.protected_cfg_file}\"",
     ]
-    subprocess.run(cmd)
+    result = await run_asyncio_subprocess(cmd, capture_stderr=True)
+    return result
 
 
-def readback(args, rb_region):
+async def readback(args, rb_region):
     # Get Docker-managed volumes
     secrets_root = get_volume(args.sysname, "secrets")
 
@@ -505,18 +588,19 @@ def readback(args, rb_region):
         "--num-bytes",
         f"{args.rb_len}",
     ]
-    subprocess.run(cmd)
+    result = await run_asyncio_subprocess(cmd, capture_stdout=True, capture_stderr=True)
+    return result
 
 
-def fw_readback(args):
-    readback(args, rb_region="firmware")
+async def fw_readback(args):
+    return await readback(args, rb_region="firmware")
 
 
-def cfg_readback(args):
-    readback(args, rb_region="configuration")
+async def cfg_readback(args):
+    return await readback(args, rb_region="configuration")
 
 
-def boot(args):
+async def boot(args):
     # Get Docker-managed volumes
     msg_root = get_volume(args.sysname, "messages")
 
@@ -531,15 +615,16 @@ def boot(args):
         f"{args.sysname}/host_tools",
         "/bin/bash",
         "-c",
-        f"rm -rf /secrets; "
+        f"\"rm -rf /secrets; "
         f"/host_tools/boot "
         f"--socket {args.uart_sock} "
-        f"--release-message-file {args.boot_msg_file}",
+        f"--release-message-file {args.boot_msg_file}\"",
     ]
-    subprocess.run(cmd)
+    result = await run_asyncio_subprocess(cmd, capture_stderr=True)
+    return result
 
 
-def monitor(args):
+async def monitor(args):
     # Get Docker-managed volumes
     msg_root = get_volume(args.sysname, "messages")
 
@@ -554,12 +639,13 @@ def monitor(args):
         f"{args.sysname}/host_tools",
         "/bin/bash",
         "-c",
-        f"rm -rf /secrets ; "
+        f"\"rm -rf /secrets ; "
         f"/host_tools/monitor "
         f"--socket {args.uart_sock} "
-        f"--release-message-file {args.boot_msg_file}",
+        f"--release-message-file {args.boot_msg_file}\"",
     ]
-    subprocess.run(cmd)
+    result = await run_asyncio_subprocess(cmd, capture_stderr=True)
+    return result
 
 
 def cleanup(args):
@@ -607,6 +693,11 @@ def get_args():
         required=True,
         help="Oldest allowed firmware version on device",
     )
+    parser_create.add_argument(
+        "--eeprom-secret",
+        default="Test EEPROM Secret",
+        help="Data to place at the end of EEPROM"
+    )
     create_group = parser_create.add_mutually_exclusive_group(required=True)
     create_group.add_argument(
         "--physical",
@@ -617,6 +708,11 @@ def get_args():
         "--emulated",
         action="store_true",
         help="Run system for emulated device",
+    )
+    create_group.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Force a full build of the host_tools docker image",
     )
     parser_create.set_defaults(func=build_system)
 
@@ -819,6 +915,26 @@ def get_args():
     )
     parser_monitor.set_defaults(func=monitor)
 
+    # Delete messages
+    parser_delmsg = subparsers.add_parser("delete-message", help="delete-release-message help")
+    parser_delmsg.add_argument("--sysname", required=True, help="SAFFIRe system name")
+    parser_delmsg.add_argument(
+        "--boot-msg-file",
+        required=True,
+        help="File name of existing release message to delete",
+    )
+    parser_delmsg.set_defaults(func=delete_release_message)
+
+    # Print release message
+    parser_printmsg = subparsers.add_parser("print-message", help="print-message help")
+    parser_printmsg.add_argument("--sysname", required=True, help="SAFFIRe system name")
+    parser_printmsg.add_argument(
+        "--boot-msg-file",
+        required=True,
+        help="File name to read booted release message from",
+    )
+    parser_printmsg.set_defaults(func=get_release_message)
+
     # Clean up temporary files
     parser_cleanup = subparsers.add_parser("cleanup", help="cleanup help")
     parser_cleanup.add_argument("--sysname", help="SAFFIRe system name")
@@ -841,7 +957,12 @@ def main():
 
     # Get args and call specified function
     args = get_args()
-    args.func(args)
+
+    # If not a coroutine, run without asyncio
+    if inspect.iscoroutinefunction(args.func):
+        asyncio.run(args.func(args))
+    else:
+        args.func(args)
 
 
 if __name__ == "__main__":

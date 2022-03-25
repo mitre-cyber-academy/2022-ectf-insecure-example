@@ -17,6 +17,8 @@ FROM ${SYSNAME}/host_tools as host_tools
 
 FROM ${PARENT}
 
+ARG EEPROM_SECRET
+
 RUN apk update && apk upgrade && apk add python3
 
 # Add environment customizations here
@@ -33,4 +35,4 @@ RUN mkdir /flash
 RUN mkdir /eeprom
 
 # Create padded binaries for the system bootstrappers
-RUN python3 /platform/create_images.py
+RUN python3 /platform/create_images.py --eeprom-secret "$EEPROM_SECRET"
