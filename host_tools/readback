@@ -76,8 +76,8 @@ def readback(socket_number, region, num_bytes):
             fw += data
             bytes_remaining -= num_received
 
-        log.info(f"Memory Readback Data:")
-        print(f"{fw.hex()}")
+        log.info(f"Memory Readback Data: {fw.hex()}\n")
+        print(f"{fw.hex()}\n")
 
 
 def main():

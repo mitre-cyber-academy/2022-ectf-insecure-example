@@ -64,6 +64,17 @@ async def run_asyncio_subprocess(cmd, capture_stdout=False, capture_stderr=False
     return proc
 
 
+def run_subprocess_capture(cmd):
+    capture_output = False
+
+    # Only capture the output when not running in script mode
+    if __name__ != "__main__":
+        capture_output = True
+
+    proc = subprocess.run(cmd, capture_output=capture_output)
+    return proc
+
+
 def delete_release_message(args):
     # Get Docker-managed volumes
     msg_root = get_volume(args.sysname, "messages")
@@ -73,11 +84,9 @@ def delete_release_message(args):
         "docker",
         "run",
         "-i",
-        "--add-host",
-        "saffire-net:host-gateway",
         "-v",
         f"{msg_root}:/messages",
-        f"{args.sysname}/host_tools",
+        "alpine:3.12",
         "rm",
         "-f",
         f"/messages/{args.boot_msg_file}"
@@ -94,15 +103,13 @@ def get_release_message(args):
         "docker",
         "run",
         "-i",
-        "--add-host",
-        "saffire-net:host-gateway",
         "-v",
         f"{msg_root}:/messages",
-        f"{args.sysname}/host_tools",
+        "alpine:3.12",
         "cat",
         f"/messages/{args.boot_msg_file}"
     ]
-    return subprocess.run(cmd, capture_output=True)
+    return run_subprocess_capture(cmd)
 
 
 def kill_system(args):
@@ -176,17 +183,10 @@ def build_system(args):
     cmd = ["docker", "volume", "rm", f"{secrets_root}"]
     p1 = subprocess.run(cmd)
 
-    # Choose whether to force a full container build
-    if args.no_cache:
-        no_cache = "--no-cache"
-    else:
-        no_cache = ""
-
     # Build host tools
     cmd = [
         "docker",
         "build",
-        f"{no_cache}",
         "--progress",
         "plain",
         f"{args.root_path}",
@@ -197,11 +197,11 @@ def build_system(args):
         "--build-arg",
         f"OLDEST_VERSION={args.oldest_allowed_version}",
     ]
-    p2 = subprocess.run(cmd, capture_output=True)
+    # Choose whether to force a full container build
+    if args.no_cache:
+        cmd.append("--no-cache")
 
-    if __name__ == "__main__":
-        printout = p2.stdout.decode()
-        log.info(printout.replace('\\n', '\n'))
+    p2 = run_subprocess_capture(cmd)
 
     # Build device
     cmd = [
@@ -221,7 +221,7 @@ def build_system(args):
         "--build-arg",
         f"EEPROM_SECRET={args.eeprom_secret}",
     ]
-    p3 = subprocess.run(cmd, capture_output=True)
+    p3 = run_subprocess_capture(cmd)
 
     # Build device copy with side-channel emulator
     cmd = [
@@ -241,7 +241,7 @@ def build_system(args):
         "--build-arg",
         f"EEPROM_SECRET={args.eeprom_secret}",
     ]
-    p4 = subprocess.run(cmd, capture_output=True)
+    p4 = run_subprocess_capture(cmd)
 
     # "docker volume rm <secrets volume>" was returning an error code when the volume didn't exist
     # not going to check the returncode of this
@@ -420,39 +420,31 @@ def launch_bootloader(args):
     # Check for type
     if args.emulated:
         if args.sock_root is None:
-            log.error("launch_bootloader: Missing '--sock-root' for emulated flow")
-            exit(1)
+            exit("launch_bootloader: Missing '--sock-root' for emulated flow")
         launch_emulator(args)
     elif args.physical:
         if args.serial_port is None:
-            log.error("launch_bootloader: Missing '--serial-port' for physical flow")
-            exit(1)
+            exit("launch_bootloader: Missing '--serial-port' for physical flow")
         launch_bootloader_bridge(args)
     else:
-        log.error("launch_bootloader: Missing '--emulated' or '--physical'")
-        exit(1)
+        exit("launch_bootloader: Missing '--emulated' or '--physical'")
 
 
 def launch_bootloader_interactive(args):
     if args.sock_root is None:
-        log.error(
-            "launch_bootloader_interactive: Missing '--sock-root' for emulated flow"
-        )
-        exit(1)
+        exit("launch_bootloader_interactive: Missing '--sock-root' for emulated flow")
     launch_emulator(args, interactive=True)
 
 
 def launch_bootloader_gdb(args):
     if args.sock_root is None:
-        log.error("launch_bootloader_gdb: Missing '--sock-root' for emulated flow")
-        exit(1)
+        exit("launch_bootloader_gdb: Missing '--sock-root' for emulated flow")
     launch_emulator(args, do_gdb=True)
 
 
 def launch_bootloader_sc(args):
     if args.sock_root is None:
-        log.error("launch_bootloader_sc: Missing '--sock-root' for emulated flow")
-        exit(1)
+        exit("launch_bootloader_sc: Missing '--sock-root' for emulated flow")
     launch_emulator(args, do_sc=True)
 
 
@@ -480,7 +472,7 @@ async def fw_protect(args):
         "--version",
         f"{args.fw_version}",
         "--release-message",
-        f"\"{args.fw_message}\"",
+        f'"{args.fw_message}"',
         "--output-file",
         f"{args.protected_fw_file}",
     ]
@@ -532,10 +524,10 @@ async def fw_update(args):
         f"{args.sysname}/host_tools",
         "/bin/bash",
         "-c",
-        f"\"rm -rf /secrets; "
-        f"/host_tools/fw_update "
+        '"rm -rf /secrets; '
+        "/host_tools/fw_update "
         f"--socket {args.uart_sock} "
-        f"--firmware-file {args.protected_fw_file}\"",
+        f'--firmware-file {args.protected_fw_file}"',
     ]
     result = await run_asyncio_subprocess(cmd, capture_stderr=True)
     return result
@@ -558,10 +550,10 @@ async def cfg_load(args):
         f"{args.sysname}/host_tools",
         "/bin/bash",
         "-c",
-        f"\"rm -rf /secrets ; "
-        f"/host_tools/cfg_load "
+        '"rm -rf /secrets ; '
+        "/host_tools/cfg_load "
         f"--socket {args.uart_sock} "
-        f"--config-file {args.protected_cfg_file}\"",
+        f'--config-file {args.protected_cfg_file}"',
     ]
     result = await run_asyncio_subprocess(cmd, capture_stderr=True)
     return result
@@ -615,10 +607,10 @@ async def boot(args):
         f"{args.sysname}/host_tools",
         "/bin/bash",
         "-c",
-        f"\"rm -rf /secrets; "
-        f"/host_tools/boot "
+        '"rm -rf /secrets; '
+        "/host_tools/boot "
         f"--socket {args.uart_sock} "
-        f"--release-message-file {args.boot_msg_file}\"",
+        f'--release-message-file {args.boot_msg_file}\"',
     ]
     result = await run_asyncio_subprocess(cmd, capture_stderr=True)
     return result
@@ -639,10 +631,10 @@ async def monitor(args):
         f"{args.sysname}/host_tools",
         "/bin/bash",
         "-c",
-        f"\"rm -rf /secrets ; "
-        f"/host_tools/monitor "
+        '"rm -rf /secrets ; '
+        "/host_tools/monitor "
         f"--socket {args.uart_sock} "
-        f"--release-message-file {args.boot_msg_file}\"",
+        f'--release-message-file {args.boot_msg_file}"',
     ]
     result = await run_asyncio_subprocess(cmd, capture_stderr=True)
     return result
@@ -698,6 +690,11 @@ def get_args():
         default="Test EEPROM Secret",
         help="Data to place at the end of EEPROM"
     )
+    parser_create.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Force a full build of the host_tools docker image",
+    )
     create_group = parser_create.add_mutually_exclusive_group(required=True)
     create_group.add_argument(
         "--physical",
@@ -708,11 +705,6 @@ def get_args():
         "--emulated",
         action="store_true",
         help="Run system for emulated device",
-    )
-    create_group.add_argument(
-        "--no-cache",
-        action="store_true",
-        help="Force a full build of the host_tools docker image",
     )
     parser_create.set_defaults(func=build_system)
 

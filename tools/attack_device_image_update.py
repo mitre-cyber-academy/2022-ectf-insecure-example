@@ -121,7 +121,9 @@ def image_update(in_file):
 if __name__ == "__main__":
 
     # Parse arguments
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Tool for loading designs into the keyed attack-phase device",
+    )
     parser.add_argument("--infile", required=True, help="Path to the input binary")
 
     args = parser.parse_args()
