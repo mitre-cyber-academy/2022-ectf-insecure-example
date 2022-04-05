@@ -29,8 +29,6 @@ def main(eeprom_secret):
     source_eeprom = Path("/bootloader/eeprom.bin")
 
     # Output binaries
-    out_flash = Path("/flash/flash.bin")
-    out_eeprom = Path("/eeprom/eeprom.bin")
     out_phys_image = Path("/bootloader/phys_image.bin")
 
     # Read input binaries
@@ -39,15 +37,6 @@ def main(eeprom_secret):
 
     with open(source_eeprom, "rb") as fp:
         eeprom_data = fp.read()
-
-    # Pad front of bootloader for flash.bin
-    flash_front_padding = bytes([0xFF] * FLASH_FRONT_SIZE)
-    flash_front_data = flash_front_padding + bl_data
-
-    # Pad back bootloader for flash.bin
-    flash_back_pad_len = FLASH_SIZE - len(flash_front_data)
-    flash_back_padding = bytes([0xFF] * flash_back_pad_len)
-    flash_data = flash_front_data + flash_back_padding
 
     # Pad bootloader for phys_image.bin
     image_bl_pad_len = IMAGE_BL_SIZE - len(bl_data)
@@ -69,13 +58,7 @@ def main(eeprom_secret):
     # Create phys_image.bin
     image_data = image_bl_data + final_eeprom_data
 
-    # Write output binaries
-    with open(out_flash, "wb") as fp:
-        fp.write(flash_data)
-
-    with open(out_eeprom, "wb") as fp:
-        fp.write(final_eeprom_data)
-
+    # Write output binary
     with open(out_phys_image, "wb") as fp:
         fp.write(image_data)
 
