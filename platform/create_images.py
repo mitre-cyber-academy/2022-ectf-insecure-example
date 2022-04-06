@@ -50,7 +50,7 @@ def main(eeprom_secret):
 
     # Add EEPROM secret to end of EEPROM
     if len(eeprom_secret) > 64:
-        exit(f"EEPROM secret too long ({len(eeprom_scret)} > 64")
+        exit(f"EEPROM secret too long ({len(eeprom_secret)} > 64")
     eeprom_secret_pad_len = 64 - len(eeprom_secret)
     eeprom_secret_padding = bytes([0xFF] * eeprom_secret_pad_len)
     final_eeprom_data = eeprom_data[0:EEPROM_SIZE-64] + bytes(eeprom_secret, 'latin-1') + eeprom_secret_padding
